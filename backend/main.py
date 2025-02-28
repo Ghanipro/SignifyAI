@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 import spacy
+from transformers import pipeline
 
 app = FastAPI()
 nlp = spacy.load("en_core_web_sm")
@@ -14,6 +15,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+emotion_model = pipeline("text-classification", model="bhadresh-savani/distilbert-base-uncased-emotion", return_all_scores=True)
+
+# Request model
+class TextInput(BaseModel):
+    text: str
 
 # Request model
 class SpeechText(BaseModel):
@@ -39,6 +46,16 @@ def convert_to_isl(sentence):
     return isl_sentence
 
 @app.post("/convert_speech")
-async def process_text(speech: SpeechText):
-    isl_text = convert_to_isl(speech.text)
-    return {"original_text": speech.text, "isl_text": isl_text}
+async def convert_speech(input_data: TextInput):  # 🛠️ Use input_data instead of input_text
+    isl_text = convert_to_isl(input_data.text)  # 🛠️ Fix variable name
+
+    # Perform sentiment analysis
+    emotions = emotion_model(input_data.text)[0]
+    highest_emotion = max(emotions, key=lambda x: x["score"])
+
+    return {
+        "speech_text": input_data.text,
+        "isl_text": isl_text,
+        "emotion": highest_emotion["label"],
+        "confidence": highest_emotion["score"],
+    }

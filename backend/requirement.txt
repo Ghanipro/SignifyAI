@@ -2,3 +2,6 @@ fastapi
 uvicorn
 pydantic
 spacy
+transformers
+torch
+fastapi[all]
