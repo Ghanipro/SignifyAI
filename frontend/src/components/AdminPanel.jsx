@@ -131,7 +131,7 @@ const AdminPanel = () => {
                 <div className="bg-black bg-opacity-30 p-4 border-t border-indigo-900">
                   <div className="aspect-video rounded overflow-hidden">
                     <video
-                      src={`http://localhost:8000/static/${word.file_path}`}
+                      src={`http://localhost:8000/${word.file_path}`}
                       controls
                       className="w-full h-full object-contain"
                     >

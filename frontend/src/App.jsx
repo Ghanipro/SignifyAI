@@ -40,60 +40,129 @@ const Home = () => {
   const [recognition, setRecognition] = useState(null);
   const [videoUrl, setVideoUrl] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [selectedLanguage, setSelectedLanguage] = useState("en-US");
+
+  // Available languages
+  const languages = [
+    { code: "en-US", name: "English" },
+    { code: "te-IN", name: "Telugu" },
+    { code: "ur-PK", name: "Urdu" },
+    { code: "hi-IN", name: "Hindi" },
+    { code: "ta-IN", name: "Tamil" },
+    { code: "ml-IN", name: "Malayalam" },
+    { code: "bn-IN", name: "Bengali" },
+    { code: "gu-IN", name: "Gujarati" },
+    { code: "kn-IN", name: "Kannada" },
+    { code: "mr-IN", name: "Marathi" },
+    { code: "es-ES", name: "Spanish" },
+    { code: "fr-FR", name: "French" },
+    { code: "de-DE", name: "German" },
+    { code: "it-IT", name: "Italian" },
+    { code: "ja-JP", name: "Japanese" },
+    { code: "ko-KR", name: "Korean" },
+    { code: "zh-CN", name: "Chinese (Simplified)" },
+    { code: "ar-SA", name: "Arabic" },
+    { code: "ru-RU", name: "Russian" },
+    { code: "pt-BR", name: "Portuguese" }
+  ];
+
+  const handleLanguageChange = (e) => {
+    const langCode = e.target.value;
+    setSelectedLanguage(langCode);
+    if (isListening && recognition) {
+      recognition.stop();
+      setIsListening(false);
+    }
+    // Reset states
+    setSpeechText("");
+    setIslText("");
+    setEmotion("");
+    setConfidence("");
+  };
+
+  const processConversion = async (spokenText) => {
+    try {
+      setIsLoading(true);
+      
+      if (selectedLanguage !== "en-US") {
+        const translationResponse = await fetch("http://localhost:8000/translate_text", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ 
+            text: spokenText,
+            source_language: selectedLanguage,
+          }),
+        });
+
+        if (!translationResponse.ok) {
+          throw new Error("Translation failed");
+        }
+
+        const data = await translationResponse.json();
+        setSpeechText(spokenText); // Original text
+        setIslText(data.isl_text); // ISL format
+
+        // Get emotion analysis
+        const emotionResponse = await fetch("http://localhost:8000/convert_speech", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: data.translated_text }),
+        });
+
+        if (emotionResponse.ok) {
+          const emotionData = await emotionResponse.json();
+          setEmotion(emotionData.emotion);
+          setConfidence((emotionData.confidence * 100).toFixed(2));
+        }
+      } else {
+        // For English, directly convert to ISL
+        const response = await fetch("http://localhost:8000/convert_speech", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: spokenText }),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          setSpeechText(spokenText);
+          setIslText(data.isl_text);
+          setEmotion(data.emotion);
+          setConfidence((data.confidence * 100).toFixed(2));
+        }
+      }
+    } catch (error) {
+      console.error("Error:", error);
+      setIslText("Translation error occurred");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const startRecognition = () => {
     setIsListening(true);
     const recognitionInstance = new window.webkitSpeechRecognition();
-    recognitionInstance.lang = "en-US";
-    setRecognition(recognitionInstance);
+    recognitionInstance.continuous = false;
+    recognitionInstance.interimResults = false;
+    recognitionInstance.lang = selectedLanguage;
 
     recognitionInstance.onresult = async (event) => {
       const spokenText = event.results[0][0].transcript;
       setSpeechText(spokenText);
+      await processConversion(spokenText);
+    };
 
-      // Set loading state for video generation
-      setIsLoading(true);
-      setVideoUrl("");
-
-      // Send text to FastAPI backend for ISL conversion and Sentiment Analysis
-      const response = await fetch("http://localhost:8000/convert_speech", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: spokenText }),
-      });
-
-      const data = await response.json();
-      setIslText(data.isl_text);
-      setEmotion(data.emotion);
-      setConfidence((data.confidence * 100).toFixed(2));
-      
-      // Assuming the API now returns a video URL as well
-      if (data.video_url) {
-        setVideoUrl(data.video_url);
-      }
-      
-      setIsLoading(false);
+    recognitionInstance.onerror = (event) => {
+      console.error("Speech recognition error", event);
       setIsListening(false);
+      setIsLoading(false);
     };
 
     recognitionInstance.onend = () => {
       setIsListening(false);
-      setRecognition(null);
-    };
-
-    recognitionInstance.onerror = () => {
-      setIsListening(false);
-      setRecognition(null);
-      setIsLoading(false);
     };
 
     recognitionInstance.start();
-  };
-
-  const stopRecognition = () => {
-    if (recognition) {
-      recognition.stop();
-    }
+    setRecognition(recognitionInstance);
   };
 
   // Function to get emoji based on emotion
@@ -130,32 +199,40 @@ const Home = () => {
       <main className="w-full max-w-6xl mx-auto px-6 py-8 flex-1 flex flex-col items-center">
         <h2 className="text-2xl mb-8 text-center font-light">Bridging Speech and Sign Language with AI</h2>
         
+        {/* Language Selection */}
+        <div className="w-full max-w-md mb-8">
+          <label className="block text-sm font-medium text-white mb-2">Select Language:</label>
+          <select
+            value={selectedLanguage}
+            onChange={handleLanguageChange}
+            className="w-full p-2 rounded-md bg-white bg-opacity-20 text-white border border-white border-opacity-20"
+          >
+            {languages.map((lang) => (
+              <option key={lang.code} value={lang.code}>
+                {lang.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        
         {/* Main button area */}
         <div className="w-full flex justify-center mb-12 space-x-4">
-          {!isListening ? (
-            <button
-              onClick={startRecognition}
-              className="relative flex items-center justify-center space-x-3 px-8 py-4 rounded-full shadow-lg transition duration-300 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700"
-            >
-              <div className="bg-white rounded-full p-2">
-                <Mic size={24} className="text-indigo-700" />
-              </div>
-              <span className="font-semibold text-lg">Start Speaking</span>
-            </button>
-          ) : (
-            <button
-              onClick={stopRecognition}
-              className="relative flex items-center justify-center space-x-3 px-8 py-4 rounded-full shadow-lg transition duration-300 bg-red-500 hover:bg-red-600"
-            >
-              <div className="bg-white rounded-full p-2 animate-pulse">
-                <Square size={24} className="text-red-700" />
-              </div>
-              <span className="font-semibold text-lg">Stop Recording</span>
-              
-              {/* Ripple effect when listening */}
-              <span className="absolute w-full h-full rounded-full animate-ping bg-red-400 opacity-50"></span>
-            </button>
-          )}
+          <button
+            onClick={isListening ? () => recognition?.stop() : startRecognition}
+            className={`relative flex items-center justify-center space-x-3 px-8 py-4 rounded-full shadow-lg transition duration-300 ${
+              isListening 
+                ? "bg-red-500 hover:bg-red-600" 
+                : "bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700"
+            }`}
+            disabled={isLoading}
+          >
+            <div className="bg-white rounded-full p-2">
+              <Mic size={24} className={isListening ? "text-red-700" : "text-indigo-700"} />
+            </div>
+            <span className="font-semibold text-lg">
+              {isListening ? "Stop Speaking" : "Start Speaking"}
+            </span>
+          </button>
         </div>
         
         {/* Cards area */}
@@ -173,16 +250,25 @@ const Home = () => {
             </div>
           </div>
           
-          {/* ISL Grammar Card */}
+          {/* ISL Grammar Card - Updated */}
           <div className="bg-white bg-opacity-10 backdrop-blur-lg p-6 rounded-2xl shadow-xl border border-white border-opacity-20">
             <div className="flex items-center mb-4">
               <div className="bg-purple-500 bg-opacity-30 p-2 rounded-lg mr-3">
                 <Activity size={20} className="text-purple-100" />
               </div>
-              <h3 className="text-xl font-medium">ISL Grammar</h3>
+              <h3 className="text-xl font-medium">English ISL</h3>
             </div>
-            <div className="h-32 flex items-center justify-center">
-              <p className="text-lg font-medium text-indigo-200">{islText || "ISL conversion will appear here..."}</p>
+            <div className="h-32 flex flex-col items-center justify-center">
+              {isLoading ? (
+                <div className="flex items-center space-x-2">
+                  <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-purple-200"></div>
+                  <p className="text-sm">Converting to ISL...</p>
+                </div>
+              ) : (
+                <p className="text-lg font-medium text-indigo-200 text-center">
+                  {islText || "ISL conversion will appear here..."}
+                </p>
+              )}
             </div>
           </div>
           
